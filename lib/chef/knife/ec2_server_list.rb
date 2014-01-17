@@ -7,7 +7,7 @@ require 'chef/knife/cloud/server/list_command'
 require 'chef/knife/ec2_helpers'
 require 'chef/knife/cloud/ec2_service_options'
 require 'chef/knife/cloud/server/list_options'
-
+require 'pry'
 class Chef
   class Knife
     class Cloud
@@ -18,6 +18,17 @@ class Chef
 
         banner "knife ec2 server list (options)"
 
+        option :az,
+          :long => "--availability-zone",
+          :boolean => true,
+          :default => false,
+          :description => "Show availability zones"
+
+        option :tags,
+          :short => "-t TAG1,TAG2",
+          :long => "--tags TAG1,TAG2",
+          :description => "List of tags to output"
+
         def before_exec_command
           #set columns_with_info map
           @columns_with_info = [
@@ -27,9 +38,19 @@ class Chef
           {:label => 'Private IP', :key => 'private_ip_address'},
           {:label => 'Flavor', :key => 'flavor_id'},
           {:label => 'Image', :key => 'image_id'},
-          {:label => 'Keypair', :key => 'key_name'},
-          {:label => 'State', :key => 'state'}
+          {:label => 'SSH Key', :key => 'key_name'},
+          {:label => 'Security Groups', :key => 'groups'},
+          {:label => 'State', :key => 'state'},
+          {:label => 'IAM Profile', :key => 'iam_instance_profile'}
+          
         ]
+          @columns_with_info << {:label => 'AZ', :key => 'availability_zone'} if config[:az]
+
+          if config[:tags]
+            config[:tags].split(",").collect do |tag_name|
+              @columns_with_info << {:label => 'Tags:'+tag_name, :key => 'tags', :nested_values => tag_name}
+            end
+          end      
           super
         end
 
