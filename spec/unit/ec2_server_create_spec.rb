@@ -138,19 +138,6 @@ describe Chef::Knife::Cloud::Ec2ServerCreate do
       @instance.create_options[:server_def][:groups].should == "ec2_security_groups"
     end
 
-    it "set user_data when aws_user_data is provided." do
-      Chef::Config[:knife][:aws_user_data] = "aws_user_data_file_path"
-      File.stub(:read).and_return("aws_user_data_values")
-      @instance.before_exec_command
-      @instance.create_options[:server_def][:user_data].should == "aws_user_data_values"
-    end
-
-    it "throws ui warning when aws_user_data is not readable." do
-      Chef::Config[:knife][:aws_user_data] = "aws_user_data_file_path"
-      @instance.ui.should_receive(:warn).once
-      @instance.before_exec_command
-    end
-
     it "sets create_option ebs_optimized to true when provided with some value." do
       @instance.config[:ebs_optimized] = "some_value"
       @instance.before_exec_command
@@ -196,7 +183,139 @@ describe Chef::Knife::Cloud::Ec2ServerCreate do
       @instance.before_exec_command
       @instance.create_options[:server_def][:tenancy].should == nil
     end
+
+    context "when image is windows" do
+      before(:each) do
+        @instance.service.stub(:is_image_windows?).and_return(true)
+      end
+
+      context "bootstrap protocol winrm" do
+        before(:each) do
+          @instance.config[:bootstrap_protocol] = "winrm"
+          @instance.config[:winrm_user] = "testuser_winrm"
+          @instance.config[:winrm_password] = "testpassword_winrm"
+        end
+
+        it "user data includes user create script for testuser_winrm" do
+          @instance.before_exec_command
+          @instance.create_options[:server_def][:user_data].should include("<powershell>")
+          @instance.create_options[:server_def][:user_data].should include("</powershell>")
+          @instance.create_options[:server_def][:user_data].should include("testuser_winrm")
+          @instance.create_options[:server_def][:user_data].should include("$newuser.SetPassword(\"testpassword_winrm\")")
+        end
+
+        it "user data includes winrm config script" do
+          @instance.before_exec_command
+          @instance.create_options[:server_def][:user_data].should include("testuser_winrm")
+          @instance.create_options[:server_def][:user_data].should include("winrm quickconfig -q")
+          @instance.create_options[:server_def][:user_data].should include("winrm e winrm/config/listener")
+          @instance.create_options[:server_def][:user_data].should include("$fwrule = New-Object -ComObject HNetCfg.FwRule")
+          @instance.create_options[:server_def][:user_data].should include("$fwrule.Name = \"knife-winrm\"")
+          @instance.create_options[:server_def][:user_data].should include("$fwpolicy = New-Object -ComObject HNetCfg.FwPolicy2")
+          @instance.create_options[:server_def][:user_data].should include("$fwpolicy.Rules.Add($fwrule)")
+        end
+
+        context "winrm-transport set to ssl" do
+          before(:each) do
+            @instance.config[:winrm_transport] = "ssl"
+            @instance.config[:certificate_passwd] = "testwinrmcertgen"
+            @instance.config[:cert_hostname_pattern] = "*.compute-1.amazonaws.com"
+            @instance.config[:pfx_cert] = "C:\Users\cert.pfx"
+            File.should_receive(:binread).with("C:\Users\cert.pfx").and_return(" \n")
+            Base64.stub(:encode64).and_return("")
+          end
+
+          it "user data includes winrm ssl configuration commands" do
+            @instance.config[:preserve_winrm_http] = false
+            @instance.before_exec_command
+            @instance.create_options[:server_def][:user_data].should include("testuser_winrm")
+            @instance.create_options[:server_def][:user_data].should include("winrm quickconfig -q")
+            @instance.create_options[:server_def][:user_data].should include("winrm e winrm/config/listener")
+            @instance.create_options[:server_def][:user_data].should include("winrm delete winrm/config/Listener?Address=*+Transport=HTTP")
+            @instance.create_options[:server_def][:user_data].should include("$winrmcmd = \"winrm create winrm/config/listener?Address=*+Transport=HTTPS @{Hostname=`\"*.compute-1.amazonaws.com`\";CertificateThumbprint=`\"$thumbprint`\";Port=`\"5986`\"}\"")
+            @instance.create_options[:server_def][:user_data].should include("$fwrule = New-Object -ComObject HNetCfg.FwRule")
+            @instance.create_options[:server_def][:user_data].should include("$fwrule.LocalPorts = 5986")
+            @instance.create_options[:server_def][:user_data].should include("$fwrule.Description = \"Open winrm ssl port\"")
+          end
+
+          it "user data includes winrm ssl configuration with preserve_winrm_http" do
+            @instance.config[:preserve_winrm_http] = true
+            @instance.before_exec_command
+            @instance.create_options[:server_def][:user_data].should include("testuser_winrm")
+            @instance.create_options[:server_def][:user_data].should_not include("winrm delete winrm/config/Listener?Address=*+Transport=HTTP")
+          end
+        end
+      end
+
+      context "bootstrap protocol is ssh" do
+        before(:each) do
+          @instance.config[:bootstrap_protocol] = "ssh"
+          @instance.config[:ssh_user] = "testuser_ssh"
+          @instance.config[:ssh_password] = "testpassword_ssh"
+        end
+
+        it "user data include user create script for testuser_ssh" do
+          @instance.before_exec_command
+          @instance.create_options[:server_def][:user_data].should include("<powershell>")
+          @instance.create_options[:server_def][:user_data].should include("</powershell>")
+          @instance.create_options[:server_def][:user_data].should include("testuser_ssh")
+          @instance.create_options[:server_def][:user_data].should include("testpassword_ssh")
+        end
+      end
+
+      context "--user-data cli option specified" do
+        before(:each) do
+          Chef::Config[:knife][:aws_user_data] = "C:\Users\testuser"
+          @instance.config[:bootstrap_protocol] = "winrm"
+          @instance.config[:winrm_user] = "testuser_winrm"
+          @instance.config[:winrm_password] = "testpassword_winrm"
+        end
+
+        it "append user data to create user data when script tag is present" do
+          File.stub(:read).and_call_original
+          File.stub(:read).with("C:\Users\testuser").and_return("<script> echo \"test user data script\" </script>")
+          @instance.before_exec_command
+          @instance.create_options[:server_def][:user_data].should include("<script> echo \"test user data script\" </script>")
+          @instance.create_options[:server_def][:user_data].should include("Starting knife winrm user-data script...")
+          @instance.create_options[:server_def][:user_data].should include("testuser_winrm")
+          @instance.create_options[:server_def][:user_data].should include("testpassword_winrm")
+          @instance.create_options[:server_def][:user_data].should include("$newuser.SetPassword(\"testpassword_winrm\")")
+        end
+
+        it "append user data to create user data when powershell tag is present" do
+          File.stub(:read).and_call_original
+          File.stub(:read).with("C:\Users\testuser").and_return("<powershell> write-host \"test user data script\" </powershell>")
+          @instance.before_exec_command
+          @instance.create_options[:server_def][:user_data].should include("testuser_winrm")
+          @instance.create_options[:server_def][:user_data].should include("testpassword_winrm")
+          @instance.create_options[:server_def][:user_data].should include("write-host \"test user data script\"")
+          @instance.create_options[:server_def][:user_data].should include("$newuser.SetPassword(\"testpassword_winrm\")")
+          
+          # check for only two powershell tag (i.e one opening and one closing)
+          @instance.create_options[:server_def][:user_data].scan("powershell>").length.should eq(2)
+        end
+      end      
+    end
+   
+    context "when image is linux" do
+      before(:each) do
+        @instance.service.stub(:is_image_windows?).and_return(false)
+      end
+      it "set user_data when aws_user_data is provided." do
+        Chef::Config[:knife][:aws_user_data] = "aws_user_data_file_path"
+        File.stub(:read).and_return("aws_user_data_values")
+        @instance.before_exec_command
+        @instance.create_options[:server_def][:user_data].should == "aws_user_data_values"
+      end
+
+      it "throws ui warning when aws_user_data is not readable." do
+        Chef::Config[:knife][:aws_user_data] = "aws_user_data_file_path"
+        @instance.ui.should_receive(:warn).once
+        @instance.before_exec_command
+      end
+    end
   end
+
 
   describe "#after_exec_command" do
     before(:each) do
@@ -229,20 +348,40 @@ describe Chef::Knife::Cloud::Ec2ServerCreate do
   describe "#before_bootstrap" do
     before(:each) do
       @instance = Chef::Knife::Cloud::Ec2ServerCreate.new
-      @instance.server = double
     end
 
     it "set bootstrap_ip" do
-      @instance.server.stub(:public_ip_address).and_return("127.0.0.1")
+      @instance.stub(:bootstrap_host).and_return("127.0.0.1")
       @instance.before_bootstrap
       @instance.config[:bootstrap_ip_address].should == "127.0.0.1"
     end
 
     it "raise error on nil bootstrap_ip" do
       @instance.ui.stub(:error)
-      @instance.server.stub(:public_ip_address).and_return(nil)
+      @instance.stub(:bootstrap_host).and_return(nil)
       expect { @instance.before_bootstrap }.to raise_error(Chef::Knife::Cloud::CloudExceptions::BootstrapError, "No IP address available for bootstrapping.")
-    end    
+    end
+  end
+
+  describe "#bootstrap_host" do
+    before(:each) do
+      @instance = Chef::Knife::Cloud::Ec2ServerCreate.new
+      @instance.server = double
+    end
+
+    it "returns bootstrap_host address on --server-connect-attribute cli option set" do
+      @instance.config[:server_connect_attribute] = 'private_ip_address'
+      @instance.server.stub(:private_ip_address).and_return("127.0.0.1")
+      @instance.before_bootstrap
+      @instance.config[:bootstrap_ip_address].should == "127.0.0.1"
+    end
+
+    it "returns bootstrap_host address on vpc mode is set" do
+      @instance.stub(:vpc_mode?).and_return(true)
+      @instance.server.stub(:private_ip_address).and_return("127.0.0.1")
+      @instance.before_bootstrap
+      @instance.config[:bootstrap_ip_address].should == ("127.0.0.1")
+    end
   end
 
   describe "#validate_ebs" do
