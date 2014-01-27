@@ -7,6 +7,8 @@
     winrm quickconfig -q
     winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="300"}'
     winrm set winrm/config '@{MaxTimeoutms="1800000"}'
+    <%= "winrm set winrm/config/service '@{AllowUnencrypted=\"true\"}'
+    winrm set winrm/config/service/auth '@{Basic=\"true\"}'" if defined?(basic_auth) && basic_auth %>
     
     echo "winrm e winrm/config/listener" >> $env:temp\knife-ec2-user-data.log
     winrm e winrm/config/listener >> $env:temp\knife-ec2-user-data.log

@@ -672,6 +672,13 @@ describe Chef::Knife::Ec2ServerCreate do
           server_def[:user_data].should include("$fwpolicy.Rules.Add($fwrule)")
         end
 
+        it "enable basic authentication for winrm on --basic-auth CLI option set" do
+          @knife_ec2_create.config[:basic_auth] = true
+          server_def = @knife_ec2_create.create_server_def
+          server_def[:user_data].should include("winrm set winrm/config/service '@{AllowUnencrypted=\"true\"}'")
+          server_def[:user_data].should include("winrm set winrm/config/service/auth '@{Basic=\"true\"}'")
+        end
+
         context "winrm-transport set to ssl" do
           before(:each) do
             @knife_ec2_create.config[:winrm_transport] = "ssl"
