@@ -1,5 +1,6 @@
 # Author:: Prabhu Das (<prabhu.das@clogeny.com>)
 # Author:: Ameya Varade (<ameya.varade@clogeny.com>)
+# Author:: Siddheshwar More(<siddheshwar.more@clogeny.com>)
 # Copyright:: Copyright (c) 2013 Opscode, Inc.
 
 require 'chef/knife/cloud/server/create_command'
@@ -47,33 +48,28 @@ class Chef
             @create_options[:server_def][:iam_instance_profile_name] = locate_config_value(:iam_instance_profile)
 
             if service.is_image_windows?(locate_config_value(:image))
-              # we cannot have multiple <powershell> tags in the user-data. all PS scripts should be
-              # enclosed withing single <powershell>..</powershell> tag.
-              @create_options[:server_def].merge!(:user_data => "<powershell>")
-              if(locate_config_value(:bootstrap_protocol) == "winrm")
-                @create_options[:server_def][:user_data] << "$computer = [ADSI]\"WinNT://$env:computername,computer\"\n$username = \"#{locate_config_value(:winrm_user)}\"\n$splitusername=$username.split(\"\\\\\")\nif($splitusername[1] -eq $null) { $username = $splitusername[0] }\nelse { $username = $splitusername[1] }\n$newuser = $computer.Create(\"user\", $username)\n $newuser.Path = $newuser.Path -replace(\".\\\\\", \"\")\n $newuser.SetPassword(\"#{windows_password}\")\n$newuser.SetInfo()\n $localadmin = ([adsi](\"WinNT://./Administrators,group\"))\n $localadmin.PSBase.Invoke(\"Add\",$newuser.PSBase.Path)\n " if locate_config_value(:winrm_user).downcase != "administrator"
-              else
-                @create_options[:server_def][:user_data] << "$computer = [ADSI]\"WinNT://$env:computername,computer\"\n$newuser = $computer.Create(\"user\", \"#{locate_config_value(:ssh_user)}\")\n $newuser.SetPassword(\"#{locate_config_value(:ssh_password)}\")\n$newuser.SetInfo()\n $localadmin = ([adsi](\"WinNT://./Administrators,group\"))\n $localadmin.PSBase.Invoke(\"Add\",$newuser.PSBase.Path)\n " if locate_config_value(:ssh_user).downcase != "administrator"
-              end
+              user_data = ""
+              
               if Chef::Config[:knife][:aws_user_data]
                 begin
-                  user_data_file = File.read(Chef::Config[:knife][:aws_user_data]).gsub("<powershell>", "").gsub("</powershell>", "")
-                  if(user_data_file.include? "<script>")
-                    @create_options[:server_def][:user_data] << "</powershell>"
-                    @create_options[:server_def][:user_data ] << user_data_file
+                  user_data = File.read(Chef::Config[:knife][:aws_user_data])  
+                  if(user_data.include? "<powershell>")
+                    # prepend create-win-user and winrm PS
+                    # we cannot have multiple <powershell> tags in the user-data. all PS scripts should be
+                    # enclosed withing single <powershell>..</powershell> tag.
+                    # create_user_data returns powershell script to create user and configure winrm
+                    user_data.gsub!("<powershell>", "<powershell>\n" + create_user_data + "\n")
                   else
-                    @create_options[:server_def][:user_data ] << user_data_file
-                    @create_options[:server_def][:user_data] << "</powershell>"
+                    # user provided user-data file does not include PS, just append
+                    user_data << "<powershell>\n" << create_user_data << "\n" << "</powershell>"
                   end
-                rescue
+                rescue 
                   ui.warn("Cannot read #{Chef::Config[:knife][:aws_user_data]}: #{$!.inspect}. Ignoring option.")
                 end
               else
-                @create_options[:server_def][:user_data] << "</powershell>"
+                user_data << "<powershell>\n" << create_user_data << "\n" << "</powershell>"
               end
-              
-              # in case there is no PS script, we dont send empty <powershell> script to ec2 user-data
-              @create_options[:server_def][:user_data].gsub("<powershell></powershell>", "")
+              @create_options[:server_def].merge!(:user_data => user_data)
               Chef::Log.debug @create_options[:server_def][:user_data]
             else
               if Chef::Config[:knife][:aws_user_data]
@@ -158,7 +154,7 @@ class Chef
 
           printed_security_group_ids = "default"
           printed_security_group_ids = server.security_group_ids.join(", ") if server.security_group_ids
-          @columns_with_info << {:label => 'Security Group Ids', :value =>  printed_security_group_ids} if vpc_mode? or server.security_group_ids          
+          @columns_with_info << {:label => 'Security Group Ids', :value =>  printed_security_group_ids} if vpc_mode? or server.security_group_ids
 
           requested_elastic_ip = config[:associate_eip] if config[:associate_eip]
 
@@ -198,7 +194,7 @@ class Chef
                             "EBS volume size is larger than size set in AMI of " +
                             "#{ami.block_device_mapping.first['volumeSize']}GB.\n" +
                             "Use file system tools to make use of the increased volume size."
-                ui.warn(volume_too_large_warning)            
+                ui.warn(volume_too_large_warning)
               end
             end
           end
@@ -211,7 +207,7 @@ class Chef
         def before_bootstrap
           super
           # Which IP address to bootstrap
-          bootstrap_ip_address = server.public_ip_address if server.public_ip_address
+          bootstrap_ip_address = bootstrap_host 
           Chef::Log.debug("Bootstrap IP Address: #{bootstrap_ip_address}")
           if bootstrap_ip_address.nil?
             error_message = "No IP address available for bootstrapping."
@@ -336,6 +332,14 @@ class Chef
         def check_windows_password_available(server_id)
           response = service.connection.get_password_data(server_id)
           response.body["passwordData"] ? response.body["passwordData"] : false
+        end
+
+        def bootstrap_host
+          bootstrap_host_address = if config[:server_connect_attribute]
+            server.send(config[:server_connect_attribute])
+          else
+            vpc_mode? ? server.private_ip_address : server.dns_name
+          end
         end
       end
     end
