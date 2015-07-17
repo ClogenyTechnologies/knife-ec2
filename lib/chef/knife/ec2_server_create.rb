@@ -326,6 +326,12 @@ class Chef
         :boolean => true,
         :default => false
 
+      option :basic_auth,
+        :long => "--basic-auth",
+        :description => "Enable Basic authentication for winrm on VM. Default is false",
+        :boolean => true,
+        :default => false
+
     def tcp_test_winrm(ip_addr, port)
       tcp_socket = TCPSocket.new(ip_addr, port)
       yield
@@ -768,7 +774,7 @@ class Chef
               })
           else
             winrm_cfg_ps = ERBHelpers::ERBCompiler.run(
-              File.read(File.join(user_data_scripts_dir, "winrm-http.erb")), {})
+              File.read(File.join(user_data_scripts_dir, "winrm-http.erb")), {:basic_auth => locate_config_value(:basic_auth)})
           end
         end
 
