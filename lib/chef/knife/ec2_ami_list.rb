@@ -46,12 +46,17 @@ class Chef
       option :platform,
         :short => "-p PLATFORM",
         :long => "--platform PLATFORM",
-        :description => "Platform of the server. Allowed values are ubuntu, debian, centos, fedora, rhel, nginx, turnkey, jumpbox, coreos, cisco, amazon, nessus"
+        :description => "Platform of the server. Allowed values are windows, ubuntu, debian, centos, fedora, rhel, nginx, turnkey, jumpbox, coreos, cisco, amazon, nessus"
 
-       option :owner,
+      option :owner,
         :short => "-o OWNER",
         :long => "--owner OWNER",
         :description => "The server owner (self, aws-marketplace, microsoft). Default is aws-marketplace"
+
+      option :search,
+        :short => "-s SEARCH",
+        :long => "--search SEARCH",
+        :description => "Filter AMIs list as per search keywords."
 
       def run
         $stdout.sync = true
@@ -64,7 +69,8 @@ class Chef
           ui.color("Platform", :bold),
           ui.color("Architecture", :bold),
           ui.color("Size", :bold),
-          ui.color("Name", :bold)
+          ui.color("Name", :bold),
+          ui.color("Description", :bold)
         ].flatten.compact
 
         output_column_count = server_list.length
@@ -74,17 +80,39 @@ class Chef
         rescue Exception => api_error
           raise api_error
         end
+
         servers.body["imagesSet"].each do |server|
           server_name = server["name"]
           server["platform"] = find_server_platform(server_name) unless server["platform"]
 
-          if locate_config_value(:platform)
+          if (locate_config_value(:platform) && locate_config_value(:search))
+            locate_config_value(:search).downcase!
+            if (server["description"] && server["platform"] == locate_config_value(:platform) && server["description"].downcase.include?(locate_config_value(:search)))
+              server_list << server["imageId"]
+              server_list << server["platform"]
+              server_list << server["architecture"]
+              server_list << server["blockDeviceMapping"].first["volumeSize"].to_s
+              server_list << server_name.split(/\W+/).first
+              server_list << server["description"]
+            end
+          elsif locate_config_value(:platform)
             if server["platform"] == locate_config_value(:platform)
               server_list << server["imageId"]
               server_list << server["platform"]
               server_list << server["architecture"]
               server_list << server["blockDeviceMapping"].first["volumeSize"].to_s
               server_list << server_name.split(/\W+/).first
+              server_list << server["description"]
+            end
+          elsif locate_config_value(:search)
+            locate_config_value(:search).downcase!
+            if (server["description"] && server["description"].downcase.include?(locate_config_value(:search)))
+              server_list << server["imageId"]
+              server_list << server["platform"]
+              server_list << server["architecture"]
+              server_list << server["blockDeviceMapping"].first["volumeSize"].to_s
+              server_list << server_name.split(/\W+/).first
+              server_list << server["description"]
             end
           else
             server_list << server["imageId"]
@@ -92,6 +120,7 @@ class Chef
             server_list << server["architecture"]
             server_list << server["blockDeviceMapping"].first["volumeSize"].to_s
             server_list << server_name.split(/\W+/).first
+            server_list << server["description"]
           end
         end
         puts ui.list(server_list, :uneven_columns_across, output_column_count)
