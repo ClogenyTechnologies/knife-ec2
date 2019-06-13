@@ -13,10 +13,10 @@ Gem::Specification.new do |s|
   s.license      = "Apache-2.0"
 
   s.files        = %w{LICENSE} + Dir.glob("lib/**/*")
-  s.required_ruby_version = ">= 2.3"
+  s.required_ruby_version = ">= 2.5"
 
   s.add_dependency "aws-sdk", "~> 3.0"
-  s.add_dependency "knife-windows", "~> 1.0"
+  s.add_dependency "chef", ">= 15.1"
 
   s.require_paths = ["lib"]
 end

@@ -85,8 +85,8 @@ class Chef
       end
 
       # @return [Aws::EC2::Client]
-      def connection
-        @connection ||= begin
+      def ec2_connection
+        @ec2_connection ||= begin
           Aws::EC2::Client.new(connection_string)
         end
       end
@@ -105,13 +105,13 @@ class Chef
 
       # @return [Boolean]
       def is_image_windows?
-        image_info = connection.images.get(@server.image_id)
+        image_info = ec2_connection.images.get(@server.image_id)
         image_info.platform == "windows"
       end
 
       # validate the config options that were passed since some of them cannot be used together
       # also validate the aws configuration file contents if present
-      def validate!(keys = [:aws_access_key_id, :aws_secret_access_key])
+      def validate_aws_config!(keys = [:aws_access_key_id, :aws_secret_access_key])
         errors = [] # track all errors so we report on all of them
 
         validate_aws_config_file! if locate_config_value(:aws_config_file)

@@ -21,9 +21,6 @@ require "net/ssh/proxy/http"
 require "net/ssh/proxy/command"
 require "net/ssh/gateway"
 require "fog/aws"
-require "chef/knife/bootstrap"
-require "chef/knife/bootstrap_windows_winrm"
-require "chef/knife/bootstrap_windows_ssh"
 require "chef/util/path_helper"
 
 describe Chef::Knife::Ec2ServerCreate do
@@ -2056,7 +2053,7 @@ describe Chef::Knife::Ec2ServerCreate do
             iex $create_listener_cmd
             netsh advfirewall firewall add rule name="WinRM HTTPS" protocol=TCP dir=in Localport=5986 remoteport=any action=allow localip=any remoteip=any profile=any enable=yes
             </powershell>
-        EOH
+          EOH
         end
         @server_def_user_data = <<~EOH
           <powershell>
@@ -2137,7 +2134,7 @@ describe Chef::Knife::Ec2ServerCreate do
             ipconfig > c:\\ipconfig_data.txt
 
             </script>
-        EOH
+          EOH
         end
         knife_ec2_create.config[:aws_user_data] = @user_user_data
       end
@@ -2168,7 +2165,7 @@ describe Chef::Knife::Ec2ServerCreate do
             ipconfig > c:\\ipconfig_data.txt
 
             </script>
-        EOH
+          EOH
         end
         @server_def_user_data = <<~EOH
           <powershell>
@@ -2316,7 +2313,7 @@ describe Chef::Knife::Ec2ServerCreate do
             ipconfig > c:\\ipconfig_data.txt
 
             </script>
-        EOH
+          EOH
         end
         @server_def_user_data = <<~EOH
           <powershell>

@@ -141,6 +141,7 @@ class Chef
           end
           puts ui.list(servers_list, :uneven_columns_across, output_column_count)
         else
+          servers = ec2_connection.servers
           output(format_for_display(servers))
         end
       end
@@ -150,7 +151,7 @@ class Chef
       # @return [Array<Hash>]
       def server_hashes
         all_data = []
-        connection.describe_instances.reservations.each do |i|
+        ec2_connection.describe_instances.reservations.each do |i|
           server_data = {}
           %w{image_id instance_id instance_type key_name public_ip_address private_ip_address}.each do |id|
             server_data[id] = i.instances[0].send(id)
